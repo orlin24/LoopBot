@@ -41,6 +41,22 @@
    python run.py
    ```
 
+## 📦 Building Executable
+
+To compile the application into a standalone executable using Nuitka:
+
+1. Install Nuitka:
+   ```bash
+   pip install nuitka
+   ```
+
+2. Compile to executable:
+   ```bash
+   python -m nuitka --onefile --windows-disable-console --windows-icon-from-ico=logo.ico --enable-plugin=tk-inter --enable-plugin=numpy --include-module=cryptography --include-module=certifi --include-module=psutil --include-module=secrets --include-module=hmac --include-module=google.oauth2 --include-module=google_auth_oauthlib --include-module=googleapiclient --include-module=httplib2 --include-module=PIL --include-module=customtkinter --include-module=requests --include-package-data=customtkinter --include-package-data=certifi --nofollow-import-to=matplotlib --nofollow-import-to=scipy --windows-company-name="LoopBot" --windows-product-name="LoopBot YouTube Automation" --windows-file-version="3.2.0" --windows-product-version="3.2.0" --windows-file-description="YouTube Live Stream Automation Tool" --output-filename=LoopBot.exe run.py
+   ```
+
+3. The compiled `LoopBot.exe` will be created in the current directory
+
 ## ⚙️ Settings Explained
 
 ### Duration
