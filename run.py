@@ -3139,10 +3139,10 @@ Your Device ID: """ + self.license_manager.device_id
             reusable_stream_id = self.reuse_existing_stream_smart(streamkey)
             if reusable_stream_id:
                 try:
-                    # Check if stream key is already in use by another broadcast
-                    stream_in_use, usage_status = self.is_stream_in_use(reusable_stream_id)
+                    # Check stream availability to determine the right message
+                    available, reason = self.check_stream_availability(reusable_stream_id)
                     
-                    if stream_in_use:
+                    if not available and "sedang digunakan" in reason:
                         self.log_message("🔁 Stream masih aktif, menggunakan ulang kunci")
                     else:
                         self.log_message("🔑 Kunci stream ditemukan")
