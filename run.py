@@ -745,6 +745,7 @@ class YouTubeLiveAutomation(ctk.CTk):
         # Variables
         self.youtube_service = None
         self.credentials = None
+        self.current_channel_name = "YouTube Channel"  # Default fallback
         self.running_streams = []
         self.stream_threads = []
         self.is_streaming = False
@@ -2344,12 +2345,21 @@ Your Device ID: """ + self.license_manager.device_id
                     channel_name = channel['snippet']['title']
                     subscriber_count = channel['statistics'].get('subscriberCount', 'N/A')
                     
+                    # Store channel name for use in notifications
+                    self.current_channel_name = channel_name
+                    
                     self.channel_label.configure(text=f"YouTube: {channel_name}")
                     self.log_message(f"Connected to channel: {channel_name}")
                     self.log_message(f"Subscribers: {subscriber_count}")
                     
         except Exception as e:
             self.log_message(f"Error getting channel info: {str(e)}")
+    
+    def get_current_channel_name(self):
+        """Get current channel name for notifications"""
+        if hasattr(self, 'current_channel_name'):
+            return self.current_channel_name
+        return "YouTube Channel"
     
     def load_credentials(self):
         try:
@@ -3077,7 +3087,9 @@ Your Device ID: """ + self.license_manager.device_id
             
             # Send telegram notification for stream start
             if self.telegram_config.get('notifications', {}).get('stream_start', False):
-                message = f"🎉 <b>Stream Started!</b>\n\n"
+                channel_name = self.get_current_channel_name()
+                message = f"🎉 <b>Stream Started!</b>\n"
+                message += f"<b>{channel_name}</b>\n\n"
                 message += f"📺 <b>Title:</b> {title[:50]}...\n"
                 message += f"🔑 <b>Stream Key:</b> {streamkey[:15]}...\n"
                 message += f"⏰ <b>Duration:</b> {duration_seconds//60}m {duration_seconds%60}s\n"
@@ -3091,7 +3103,9 @@ Your Device ID: """ + self.license_manager.device_id
         except Exception as e:
             # Send error notification
             if self.telegram_config.get('notifications', {}).get('errors', False):
-                error_msg = f"❌ <b>Stream Creation Failed</b>\n\n"
+                channel_name = self.get_current_channel_name()
+                error_msg = f"❌ <b>Stream Creation Failed</b>\n"
+                error_msg += f"<b>{channel_name}</b>\n\n"
                 error_msg += f"🔑 <b>Stream Key:</b> {streamkey[:15]}...\n"
                 error_msg += f"⚠️ <b>Error:</b> {str(e)[:100]}"
                 
@@ -3319,7 +3333,9 @@ Your Device ID: """ + self.license_manager.device_id
                         
                         # Send telegram end notification
                         if self.telegram_config.get('notifications', {}).get('stream_end', False):
-                            end_msg = f"🏁 <b>Stream Auto-Stopped!</b>\n\n"
+                            channel_name = self.get_current_channel_name()
+                            end_msg = f"🏁 <b>Stream Auto-Stopped!</b>\n"
+                            end_msg += f"<b>{channel_name}</b>\n\n"
                             end_msg += f"📺 <b>Title:</b> {title[:50]}...\n"
                             end_msg += f"⏰ <b>Duration:</b> {duration_seconds//60}m {duration_seconds%60}s\n"
                             end_msg += f"🆔 <b>Stream ID:</b> {stream_id}"
