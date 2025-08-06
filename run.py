@@ -1461,13 +1461,13 @@ Your Device ID: """ + self.license_manager.device_id
         
         # Other settings with tooltips
         self.delay_entry = self.create_setting_row(parent, "Delay (min):", "1")
-        ToolTip(self.delay_entry, "Jeda waktu antar siaran (dalam menit)\nRekomendasi: 3-5 menit untuk keamanan")
+        ToolTip(self.delay_entry, "Jeda waktu antar siaran (dalam menit)")
         
         self.concurrent_entry = self.create_setting_row(parent, "Max Streams:", "1")
-        ToolTip(self.concurrent_entry, "Jumlah maksimal siaran bersamaan\nPemula: 1, Advanced: 2-3")
+        ToolTip(self.concurrent_entry, "Jumlah maksimal siaran bersamaan")
         
         self.duplicate_entry = self.create_setting_row(parent, "Max Duplicates:", "1")
-        ToolTip(self.duplicate_entry, "Berapa kali 1 stream key bisa digunakan bersamaan\nRekomendasi pemula: 1")
+        ToolTip(self.duplicate_entry, "Berapa kali 1 stream key bisa digunakan bersamaan")
         
         # Checkboxes with tooltips
         checkbox_frame = ctk.CTkFrame(parent, fg_color="transparent")
@@ -1476,12 +1476,12 @@ Your Device ID: """ + self.license_manager.device_id
         self.filter_view_var = ctk.BooleanVar()
         filter_checkbox = ctk.CTkCheckBox(checkbox_frame, text="Filter Low Viewers", variable=self.filter_view_var)
         filter_checkbox.pack(side="left", padx=5)
-        ToolTip(filter_checkbox, "Hindari slot waktu dengan viewers sedikit\nRekomendasi pemula: TIDAK dicentang")
+        ToolTip(filter_checkbox, "Hindari slot waktu dengan viewers sedikit\nRekomendasi TIDAK dicentang")
         
         self.change_title_var = ctk.BooleanVar(value=True)
         title_checkbox = ctk.CTkCheckBox(checkbox_frame, text="Auto-Rotate Titles", variable=self.change_title_var)
         title_checkbox.pack(side="left", padx=5)
-        ToolTip(title_checkbox, "Ganti judul otomatis setiap siaran baru\nRekomendasi: DICENTANG untuk variasi konten")
+        ToolTip(title_checkbox, "Ganti judul otomatis setiap siaran baru\nRekomendasi DICENTANG untuk variasi konten")
         
         self.randomize_content_var = ctk.BooleanVar(value=True)
         random_checkbox = ctk.CTkCheckBox(checkbox_frame, text="Randomize Content", variable=self.randomize_content_var)
