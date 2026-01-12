@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-YouTube Live Stream Automation Tool - Modern GUI Version with License System
-Version: 3.2 - Licensed Edition with CustomTkinter UI
+YouTube Live Stream Automation Tool - Modern GUI Version
+Version: 3.2 - CustomTkinter UI
 """
 
 import customtkinter as ctk
@@ -85,10 +85,6 @@ def get_client_secrets_path():
 def get_icon_path():
     """Get correct path for logo.ico file, compatible with executable"""
     return os.path.join(get_executable_dir(), 'logo.ico')
-
-def get_license_cache_path():
-    """Get correct path for license cache file"""
-    return os.path.join(get_executable_dir(), '.license_cache')
 
 class ToolTip:
     """Simple tooltip class for UI elements"""
@@ -180,551 +176,9 @@ def create_youtube_service_with_retry(credentials):
         print(f"❌ Service creation error: {str(e)}")
         return None
 
-class CryptoUtils:
-    """Enhanced cryptographic utilities for license security"""
-    
-    @staticmethod
-    def generate_device_key(device_id):
-        """Generate AES key from device ID using PBKDF2"""
-        if not CRYPTO_AVAILABLE:
-            return device_id[:32].ljust(32, '0').encode()
-        
-        # Use device ID as password and fixed salt for reproducibility
-        salt = b'LoopBotSecure2024'  # Fixed salt for consistency
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,  # 256-bit key
-            salt=salt,
-            iterations=100000,
-            backend=default_backend()
-        )
-        return kdf.derive(device_id.encode())
-    
-    @staticmethod
-    def encrypt_data(data, key):
-        """Encrypt data using AES-256-GCM"""
-        if not CRYPTO_AVAILABLE:
-            # Fallback to base64
-            import base64
-            return base64.b64encode(data.encode()).decode()
-        
-        try:
-            # Generate random IV
-            iv = secrets.token_bytes(12)  # 96-bit IV for GCM
-            
-            # Create cipher
-            cipher = Cipher(algorithms.AES(key), modes.GCM(iv), backend=default_backend())
-            encryptor = cipher.finalize()
-            
-            # Encrypt data
-            ciphertext = encryptor.update(data.encode()) + encryptor.finalize()
-            
-            # Combine IV + auth_tag + ciphertext and encode
-            encrypted_blob = iv + encryptor.tag + ciphertext
-            import base64
-            return base64.b64encode(encrypted_blob).decode()
-            
-        except Exception:
-            # Fallback to base64 if encryption fails
-            import base64
-            return base64.b64encode(data.encode()).decode()
-    
-    @staticmethod
-    def decrypt_data(encrypted_data, key):
-        """Decrypt data using AES-256-GCM"""
-        if not CRYPTO_AVAILABLE:
-            # Fallback from base64
-            import base64
-            try:
-                return base64.b64decode(encrypted_data.encode()).decode()
-            except:
-                return None
-        
-        try:
-            import base64
-            encrypted_blob = base64.b64decode(encrypted_data.encode())
-            
-            # Extract IV, tag, and ciphertext
-            iv = encrypted_blob[:12]
-            tag = encrypted_blob[12:28]
-            ciphertext = encrypted_blob[28:]
-            
-            # Create cipher
-            cipher = Cipher(algorithms.AES(key), modes.GCM(iv, tag), backend=default_backend())
-            decryptor = cipher.finalize()
-            
-            # Decrypt data
-            plaintext = decryptor.update(ciphertext) + decryptor.finalize()
-            return plaintext.decode()
-            
-        except Exception:
-            # Fallback to base64 if decryption fails
-            import base64
-            try:
-                return base64.b64decode(encrypted_data.encode()).decode()
-            except:
-                return None
-    
-    @staticmethod
-    def hash_license_key(license_key, device_id):
-        """Create secure hash of license key with device binding"""
-        import hashlib
-        # Combine license key with device ID for device binding
-        combined = f"{license_key}:{device_id}:LoopBot2024"
-        return hashlib.sha256(combined.encode()).hexdigest()
-    
-    @staticmethod
-    def generate_integrity_hash(data, device_id):
-        """Generate multiple integrity hashes for tamper detection"""
-        import hashlib
-        
-        # Primary hash (SHA256)
-        primary = hashlib.sha256(f"{data}:{device_id}".encode()).hexdigest()
-        
-        # Secondary hash (SHA512)
-        secondary = hashlib.sha512(f"{device_id}:{data}:integrity".encode()).hexdigest()[:32]
-        
-        # Tertiary hash (MD5 for quick check)
-        tertiary = hashlib.md5(f"check:{data}".encode()).hexdigest()
-        
-        return {
-            'primary': primary,
-            'secondary': secondary,
-            'tertiary': tertiary
-        }
-    
-    @staticmethod
-    def verify_integrity(data, device_id, stored_hashes):
-        """Verify data integrity using multiple hashes"""
-        current_hashes = CryptoUtils.generate_integrity_hash(data, device_id)
-        
-        return (current_hashes['primary'] == stored_hashes.get('primary', '') and
-                current_hashes['secondary'] == stored_hashes.get('secondary', '') and
-                current_hashes['tertiary'] == stored_hashes.get('tertiary', ''))
-
-class LicenseManager:
-    """Manages license verification and device binding"""
-    
-    def __init__(self, license_server="https://loopbotiq.com"):
-        self.license_server = license_server
-        self.device_id = self.get_device_id()
-        self.device_name = self.get_device_name()
-        self.license_data = None
-    
-    def get_device_id(self):
-        """Generate unique device ID based on enhanced hardware fingerprinting"""
-        try:
-            # Enhanced hardware fingerprinting
-            identifiers = []
-            
-            # 1. MAC Address (primary identifier)
-            try:
-                mac = ':'.join(['{:02x}'.format((uuid.getnode() >> elements) & 0xff) 
-                               for elements in range(0,2*6,2)][::-1])
-                identifiers.append(f"mac:{mac}")
-            except:
-                pass
-            
-            # 2. System information
-            identifiers.append(f"sys:{platform.system()}")
-            identifiers.append(f"machine:{platform.machine()}")
-            identifiers.append(f"processor:{platform.processor()}")
-            identifiers.append(f"node:{platform.node()}")
-            
-            # 3. Python version and architecture
-            identifiers.append(f"python:{platform.python_version()}")
-            identifiers.append(f"arch:{platform.architecture()[0]}")
-            
-            # 4. Additional system identifiers
-            try:
-                import psutil
-                # CPU info
-                identifiers.append(f"cpu_count:{psutil.cpu_count()}")
-                # Memory info (rounded to GB to avoid minor variations)
-                mem_gb = round(psutil.virtual_memory().total / (1024**3))
-                identifiers.append(f"memory_gb:{mem_gb}")
-            except ImportError:
-                # Fallback if psutil not available
-                import os
-                identifiers.append(f"cpu_count:{os.cpu_count() or 1}")
-            
-            # 5. Disk serial (Windows specific)
-            try:
-                if platform.system() == "Windows":
-                    import subprocess
-                    result = subprocess.run(['wmic', 'diskdrive', 'get', 'serialnumber'], 
-                                          capture_output=True, text=True, timeout=5)
-                    if result.stdout:
-                        serial = result.stdout.strip().split('\n')[1].strip()
-                        if serial and serial != "SerialNumber":
-                            identifiers.append(f"disk_serial:{serial}")
-            except:
-                pass
-            
-            # Combine all identifiers
-            device_string = "|".join(sorted(identifiers))  # Sort for consistency
-            
-            # Create multiple hashes for robustness
-            primary_hash = hashlib.sha256(device_string.encode()).hexdigest()
-            secondary_hash = hashlib.md5(device_string.encode()).hexdigest()
-            
-            # Combine hashes
-            combined_hash = hashlib.sha256(f"{primary_hash}:{secondary_hash}".encode()).hexdigest()
-            
-            return combined_hash[:32]  # Use first 32 characters
-            
-        except Exception:
-            # Enhanced fallback
-            try:
-                fallback_string = f"{platform.node()}:{platform.system()}:{uuid.getnode()}"
-                return hashlib.sha256(fallback_string.encode()).hexdigest()[:32]
-            except:
-                return str(uuid.uuid4()).replace('-', '')[:32]
-    
-    def get_device_name(self):
-        """Get readable device name"""
-        try:
-            computer_name = platform.node()
-            system = platform.system()
-            return f"{computer_name} ({system})"
-        except:
-            return "Unknown Device"
-    
-    def save_license_cache(self, license_data, expiry_date=None):
-        """Save license data to cache with AES encryption and integrity checks"""
-        try:
-            # Hash license key for secure storage
-            license_key = license_data.get('license_key', '')
-            hashed_key = CryptoUtils.hash_license_key(license_key, self.device_id)
-            
-            # Create cache data with hashed license key
-            secure_license_data = license_data.copy()
-            secure_license_data['license_key'] = hashed_key
-            
-            cache_data = {
-                'device_id': self.device_id,
-                'license_data': secure_license_data,
-                'cached_at': datetime.now().isoformat(),
-                'server_last_check': datetime.now().isoformat(),
-                'expiry_date': expiry_date.isoformat() if expiry_date else None,
-            }
-            
-            # Generate integrity hashes
-            cache_json = json.dumps(cache_data)
-            integrity_hashes = CryptoUtils.generate_integrity_hash(cache_json, self.device_id)
-            cache_data['integrity'] = integrity_hashes
-            
-            # Encrypt cache data with device-specific key
-            final_cache_json = json.dumps(cache_data)
-            device_key = CryptoUtils.generate_device_key(self.device_id)
-            encrypted_cache = CryptoUtils.encrypt_data(final_cache_json, device_key)
-            
-            cache_path = get_license_cache_path()
-            with open(cache_path, 'w') as f:
-                f.write(encrypted_cache)
-            
-            return True
-        except:
-            return False
-    
-    def load_license_cache(self):
-        """Load license data from cache with decryption and integrity verification"""
-        try:
-            cache_path = get_license_cache_path()
-            
-            if not os.path.exists(cache_path):
-                return None
-                
-            with open(cache_path, 'r') as f:
-                encrypted_cache = f.read()
-            
-            # Decrypt cache data with device-specific key
-            device_key = CryptoUtils.generate_device_key(self.device_id)
-            decrypted_json = CryptoUtils.decrypt_data(encrypted_cache, device_key)
-            
-            if not decrypted_json:
-                return None
-                
-            cache_data = json.loads(decrypted_json)
-            
-            # Verify device ID
-            if cache_data.get('device_id') != self.device_id:
-                return None
-            
-            # Verify integrity hashes
-            stored_integrity = cache_data.pop('integrity', {})
-            verification_json = json.dumps(cache_data)
-            
-            if not CryptoUtils.verify_integrity(verification_json, self.device_id, stored_integrity):
-                return None
-                
-            return cache_data
-        except:
-            return None
-    
-    def is_cache_valid(self, cache_data, grace_period_days=3):
-        """Check if cached license is still valid considering grace period"""
-        try:
-            if not cache_data:
-                return False
-                
-            # Check if license has actual expiry date
-            if cache_data.get('expiry_date'):
-                expiry_date = datetime.fromisoformat(cache_data['expiry_date'])
-                if datetime.now() > expiry_date:
-                    return False  # License actually expired
-            
-            # Check grace period for server connectivity
-            last_check = datetime.fromisoformat(cache_data['server_last_check'])
-            grace_period = timedelta(days=grace_period_days)
-            
-            return datetime.now() < (last_check + grace_period)
-        except:
-            return False
-    
-    def load_license(self):
-        """Load license data from memory (no file storage)"""
-        return self.license_data
-    
-    def save_license(self, license_data):
-        """Save license data to memory only (no file storage)"""
-        try:
-            self.license_data = license_data
-            return True
-        except Exception as e:
-            print(f"Error saving license: {e}")
-            return False
-    
-    def verify_license(self, license_key):
-        """Verify license with server using enhanced security"""
-        try:
-            # Use secure session
-            session = self.create_secure_session()
-            
-            url = f"{self.license_server}/api/verify_license"
-            api_token = self.generate_api_token()
-            data = {
-                "license_key": license_key,
-                "device_id": self.device_id,
-                "device_name": self.device_name,
-                "api_token": api_token,
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            response = session.post(url, json=data, timeout=30)
-            
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('success'):
-                    # Save license data
-                    license_info = {
-                        "license_key": license_key,
-                        "device_id": self.device_id,
-                        "device_name": self.device_name,
-                        "status": result.get('status'),
-                        "expired_date": result.get('expired_date'),
-                        "verified_at": datetime.now().isoformat(),
-                        "hash": result.get('hash', '')
-                    }
-                    
-                    if self.save_license(license_info):
-                        return True, "License activated successfully"
-                    else:
-                        return False, "Failed to save license data"
-                else:
-                    error_msg = result.get('error', 'License verification failed')
-                    if result.get('status') == 'device_mismatch':
-                        activated_device = result.get('activated_device', 'Unknown')
-                        error_msg = f"License is already activated on another device: {activated_device}"
-                    return False, error_msg
-            else:
-                return False, f"Server error: {response.status_code}"
-                
-        except requests.exceptions.RequestException as e:
-            return False, f"Connection error: {str(e)}"
-        except Exception as e:
-            return False, f"Verification error: {str(e)}"
-    
-    def check_license_status(self):
-        """Check license status with offline fallback and grace period"""
-        # First try to get license from memory
-        if self.license_data:
-            # Try server verification (with timeout)
-            try:
-                license_key = self.license_data.get('license_key')
-                if license_key:
-                    # Quick server check (5 second timeout)
-                    success, message = self.verify_license_quick(license_key)
-                    if success:
-                        # Save to cache on successful server check
-                        expiry_date = None
-                        try:
-                            expiry_date = datetime.fromisoformat(self.license_data.get('expired_date', ''))
-                        except:
-                            pass
-                        self.save_license_cache(self.license_data, expiry_date)
-                        return True, "License verified"
-                    
-                    # If server check fails, check if license is actually expired
-                    try:
-                        expired_date = datetime.fromisoformat(self.license_data.get('expired_date', ''))
-                        if datetime.now() > expired_date:
-                            return False, "License has expired"
-                    except:
-                        pass
-                    
-                    # License not expired but server unreachable - allow usage
-                    return True, "License valid (server check failed)"
-            except:
-                pass
-        
-        # Fallback to cached license
-        cache_data = self.load_license_cache()
-        if cache_data and self.is_cache_valid(cache_data):
-            # Use cached license data
-            self.license_data = cache_data['license_data']
-            return True, "License valid (cached)"
-        
-        # Check if cached license exists but grace period expired
-        if cache_data:
-            # Check if actual license expired vs just grace period
-            if cache_data.get('expiry_date'):
-                try:
-                    expiry_date = datetime.fromisoformat(cache_data['expiry_date'])
-                    if datetime.now() > expiry_date:
-                        return False, "LICENSE_EXPIRED"  # Special flag for popup
-                except:
-                    pass
-            
-            # Grace period expired but license might still be valid
-            return False, "Unable to verify license (server unavailable)"
-        
-        return False, "No license found"
-    
-    def create_secure_session(self):
-        """Create requests session with certificate pinning and security headers"""
-        session = requests.Session()
-        
-        # Add security headers
-        session.headers.update({
-            'User-Agent': 'LoopBot/3.2.0',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        })
-        
-        # Add certificate pinning (implement your server's certificate hash)
-        # For production, replace with your actual server certificate fingerprint
-        try:
-            import ssl
-            import certifi
-            session.verify = certifi.where()
-            
-            # Add additional SSL context for pinning (placeholder - implement actual pinning)
-            # This is a simplified version - for production use proper certificate pinning
-            pass
-            
-        except ImportError:
-            pass  # Use default verification
-            
-        return session
-    
-    def generate_api_token(self):
-        """Generate secure API token for server communication"""
-        try:
-            # Create token based on device ID and current time
-            timestamp = str(int(time.time() // 300))  # 5-minute window
-            token_data = f"{self.device_id}:{timestamp}:LoopBotAPI2024"
-            
-            # Generate HMAC-SHA256 token
-            import hmac
-            secret_key = "LoopBot2024SecretKey"  # In production, use secure key management
-            api_token = hmac.new(
-                secret_key.encode(), 
-                token_data.encode(), 
-                hashlib.sha256
-            ).hexdigest()[:16]  # Use first 16 chars
-            
-            return api_token
-        except:
-            # Fallback token
-            return hashlib.md5(f"{self.device_id}:fallback".encode()).hexdigest()[:16]
-    
-    def verify_license_quick(self, license_key, timeout=5):
-        """Quick license verification with enhanced security"""
-        try:
-            # Create secure session
-            session = self.create_secure_session()
-            
-            # Add API token for authentication
-            api_token = self.generate_api_token()
-            payload = {
-                'license_key': license_key,
-                'device_id': self.device_id,
-                'device_name': self.device_name,
-                'api_token': api_token,
-                'timestamp': datetime.now().isoformat()
-            }
-            
-            response = session.post(
-                f"{self.license_server}/api/verify", 
-                json=payload,
-                timeout=timeout
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('valid'):
-                    # Update license data with fresh info
-                    self.license_data = {
-                        'license_key': license_key,
-                        'expired_date': data.get('expired_date'),
-                        'verified_at': datetime.now().isoformat()
-                    }
-                    return True, data.get('message', 'License verified')
-                else:
-                    return False, data.get('message', 'License invalid')
-            else:
-                return False, f"Server returned status {response.status_code}"
-                
-        except requests.exceptions.Timeout:
-            return False, "Server timeout"
-        except requests.exceptions.ConnectionError:
-            return False, "Server unavailable"
-        except Exception as e:
-            return False, f"Verification failed: {str(e)}"
-    
-    def deactivate_license(self):
-        """Deactivate current license"""
-        try:
-            if self.license_data:
-                url = f"{self.license_server}/api/deactivate_license"
-                data = {
-                    "license_key": self.license_data.get('license_key'),
-                    "device_id": self.device_id
-                }
-                
-                response = requests.post(url, json=data, timeout=30)
-                
-                # Clear license data from memory
-                self.license_data = None
-                return True, "License deactivated successfully"
-            else:
-                return False, "No license to deactivate"
-                
-        except Exception as e:
-            # Clear license data from memory even if server request fails
-            self.license_data = None
-            return True, f"License removed locally (server error: {str(e)})"
-
 class YouTubeLiveAutomation(ctk.CTk):
     def __init__(self):
         super().__init__()
-        
-        # Initialize license manager first
-        self.license_manager = LicenseManager("https://loopbotiq.com")
-        self.is_licensed = False
-        self.license_check_timer = None
-        self.license_check_interval = 300000  # 5 minutes in milliseconds
         
         # Log management for memory efficiency
         self.log_count = 0
@@ -783,226 +237,9 @@ class YouTubeLiveAutomation(ctk.CTk):
         
         # Load telegram config
         self.telegram_config = self.load_telegram_config()
-        
-        # Check license status on startup
-        self.check_license_on_startup()
-        
-        # Start periodic license validation
-        self.start_periodic_license_check()
-        
+
         # Start log cleanup scheduler
         self.start_log_cleanup_scheduler()
-
-    def check_license_on_startup(self):
-        """Check license status when application starts"""
-        self.log_message("🔐 Memverifikasi lisensi...")
-        
-        valid, message = self.license_manager.check_license_status()
-        
-        if valid:
-            self.is_licensed = True
-            self.license_status_label.configure(
-                text="✅ Licensed", 
-                text_color="green"
-            )
-            
-            # Determine license status for logging
-            if "cached" in message.lower():
-                # Get cached license data to check expiry
-                cache_data = self.license_manager.load_license_cache()
-                if cache_data and cache_data.get('expiry_date'):
-                    try:
-                        expiry_date = datetime.fromisoformat(cache_data['expiry_date'])
-                        expiry_str = expiry_date.strftime("%d %B %Y")
-                        self.log_message("✅ Lisensi aktif")
-                        self.log_message(f"📅 Masa berlaku hingga: {expiry_str}")
-                        self.log_message("🕓 Mode offline diaktifkan (30 hari tanpa koneksi server)")
-                        self.log_message("🎉 Akses penuh diberikan")
-                    except:
-                        self.log_message("✅ Lisensi aktif")
-                        self.log_message("🎉 Akses penuh diberikan")
-                else:
-                    self.log_message("✅ Lisensi aktif")
-                    self.log_message("🎉 Akses penuh diberikan")
-            else:
-                # Fresh verification - check if we have expiry info
-                if self.license_manager.license_data and self.license_manager.license_data.get('expired_date'):
-                    try:
-                        expiry_date = datetime.fromisoformat(self.license_manager.license_data['expired_date'])
-                        expiry_str = expiry_date.strftime("%d %B %Y")
-                        self.log_message("✅ Lisensi aktif")
-                        self.log_message(f"📅 Masa berlaku hingga: {expiry_str}")
-                        self.log_message("🕓 Mode offline diaktifkan (30 hari tanpa koneksi server)")
-                        self.log_message("🎉 Akses penuh diberikan")
-                    except:
-                        self.log_message("✅ Lisensi aktif")
-                        self.log_message("🎉 Akses penuh diberikan")
-                else:
-                    self.log_message("✅ Lisensi aktif")
-                    self.log_message("🎉 Akses penuh diberikan")
-            
-            self.enable_all_features()
-        else:
-            self.is_licensed = False
-            self.license_status_label.configure(
-                text="❌ No License", 
-                text_color="red"
-            )
-            
-            # Determine which license error condition to show
-            if message == "LICENSE_EXPIRED":
-                self.log_message("❌ Lisensi kedaluwarsa (berakhir pada 1 Agustus 2025)")
-                self.log_message("⛔️ Masa tenggang offline juga telah habis")
-                self.log_message("🔒 Akses ditolak — silakan perpanjang lisensi")
-                self.show_license_expired_popup()
-            elif "No license found" in message or "belum diaktivasi" in message.lower():
-                self.log_message("❌ Lisensi belum diaktivasi")
-                self.log_message("ℹ️ Silakan masukkan kode lisensi untuk melanjutkan")
-                self.log_message("🔒 Akses dibatasi sampai lisensi diaktifkan")
-            elif "tidak valid" in message.lower() or "invalid" in message.lower():
-                self.log_message("❌ Lisensi tidak valid")
-                self.log_message("⚠️ Lisensi tidak dikenali atau telah diblokir")
-                self.log_message("🔒 Aplikasi tidak dapat digunakan")
-            else:
-                # Default fallback for other errors
-                self.log_message("❌ Lisensi belum diaktivasi")
-                self.log_message("ℹ️ Silakan masukkan kode lisensi untuk melanjutkan")
-                self.log_message("🔒 Akses dibatasi sampai lisensi diaktifkan")
-            
-            self.disable_all_features()
-    
-    def show_license_expired_popup(self):
-        """Show license expired popup dialog"""
-        try:
-            import tkinter as tk
-            from tkinter import messagebox
-            
-            # Create custom popup dialog
-            result = messagebox.askquestion(
-                "License Expired",
-                "Your license has expired and needs to be renewed.\n\n"
-                "Would you like to visit the website to renew your license?",
-                icon="warning"
-            )
-            
-            if result == "yes":
-                import webbrowser
-                webbrowser.open("https://loopbotiq.com")
-                
-        except Exception:
-            pass  # Silent fail if popup cannot be shown
-    
-    def start_periodic_license_check(self):
-        """Start periodic license validation in background"""
-        if self.license_check_timer:
-            self.after_cancel(self.license_check_timer)
-        
-        self.license_check_timer = self.after(self.license_check_interval, self.periodic_license_check)
-    
-    def periodic_license_check(self):
-        """Periodic license validation with retry mechanism"""
-        def check_in_background():
-            try:
-                if self.license_manager.license_data:
-                    license_key = self.license_manager.license_data.get('license_key')
-                    if license_key:
-                        # Re-verify with server
-                        success, message = self.license_manager.verify_license(license_key)
-                        
-                        # Update UI in main thread
-                        self.after(0, lambda: self.handle_periodic_license_result(success, message))
-                    else:
-                        self.after(0, lambda: self.handle_periodic_license_result(False, "No license key found"))
-                else:
-                    # No license data, check if we should still be licensed
-                    if self.is_licensed:
-                        self.after(0, lambda: self.handle_periodic_license_result(False, "License data lost"))
-            except Exception as e:
-                # Network error - retry in shorter interval
-                self.after(60000, self.periodic_license_check)  # Retry in 1 minute
-                return
-        
-        # Run check in background thread
-        threading.Thread(target=check_in_background, daemon=True).start()
-    
-    def handle_periodic_license_result(self, success, message):
-        """Handle periodic license check result"""
-        if success:
-            # License still valid, continue periodic checks
-            self.start_periodic_license_check()
-        else:
-            # License invalid - disable features and show message
-            self.is_licensed = False
-            self.license_status_label.configure(
-                text="❌ License Invalid", 
-                text_color="red"
-            )
-            self.disable_all_features()
-            
-            # Clear license data
-            self.license_manager.license_data = None
-            self.update_license_info_display()
-            
-            # License validation failed - handle silently
-            
-            # Show popup message
-            messagebox.showwarning(
-                "License Invalid", 
-                f"License validation failed: {message}\n\n"
-                "All features have been disabled.\n"
-                "Please re-enter your license key in the License tab."
-            )
-            
-            # Stop periodic checks until new license is entered
-            if self.license_check_timer:
-                self.after_cancel(self.license_check_timer)
-                self.license_check_timer = None
-
-    def enable_all_features(self):
-        """Enable all application features"""
-        try:
-            # Enable main buttons
-            self.start_button.configure(state="normal")
-            self.authenticate_button.configure(state="normal")
-            
-            # Enable content loading
-            for entry in [self.title_entry, self.desc_entry, self.key_entry, 
-                         self.thumb_entry, self.advanced_entry]:
-                if hasattr(entry, 'configure'):
-                    entry.configure(state="normal")
-            
-            # Enable browse buttons
-            # (They're already created with normal state)
-            
-            # Enable settings
-            for widget in [self.hour_var, self.minute_var, self.second_var]:
-                # These are StringVars, not widgets
-                pass
-                
-            # Enable checkboxes
-            for checkbox_var in [self.filter_view_var, self.change_title_var, 
-                               self.randomize_content_var, self.avoid_duplicates_var]:
-                # These are already enabled by default
-                pass
-                
-            self.log_message("🎉 All features enabled!")
-            
-        except Exception as e:
-            self.log_message(f"⚠️ Error enabling features: {str(e)}")
-
-    def disable_all_features(self):
-        """Disable all application features except license entry"""
-        try:
-            # Disable main buttons
-            if hasattr(self, 'start_button'):
-                self.start_button.configure(state="disabled")
-            if hasattr(self, 'authenticate_button'):
-                self.authenticate_button.configure(state="disabled")
-            if hasattr(self, 'stop_button'):
-                self.stop_button.configure(state="disabled")
-                
-        except Exception as e:
-            self.log_message(f"⚠️ Error disabling features: {str(e)}")
 
     def load_telegram_config(self):
         """Load telegram settings from telegram.json"""
@@ -1074,7 +311,7 @@ class YouTubeLiveAutomation(ctk.CTk):
         main_frame.grid_columnconfigure(0, weight=1)
         main_frame.grid_rowconfigure(1, weight=1)
         
-        # Header with license status
+        # Header
         header_frame = ctk.CTkFrame(main_frame, height=40)
         header_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
         
@@ -1085,15 +322,9 @@ class YouTubeLiveAutomation(ctk.CTk):
         except:
             pass  # If icon not found, continue without it
         
-        ctk.CTkLabel(header_frame, text="LoopBot", 
+        ctk.CTkLabel(header_frame, text="LoopBot",
                     font=("Arial", 16, "bold")).pack(side="left", padx=(0, 10))
-        
-        # License status in header
-        self.license_status_label = ctk.CTkLabel(header_frame, text="❌ No License", 
-                                               font=("Arial", 12, "bold"),
-                                               text_color="red")
-        self.license_status_label.pack(side="left", padx=(20, 10))
-        
+
         self.status_label = ctk.CTkLabel(header_frame, text="Status: Ready")
         self.status_label.pack(side="right", padx=10)
         
@@ -1141,239 +372,18 @@ class YouTubeLiveAutomation(ctk.CTk):
         # Add tabs first
         tabview.add("Content")
         tabview.add("Settings")
-        tabview.add("License")
-        
+
         # Get the tab frames
         content_tab = tabview.tab("Content")
         settings_tab = tabview.tab("Settings")
-        license_tab = tabview.tab("License")
-        
+
         # Setup each tab - call methods on self, passing the tab frame
         self.setup_content_tab(content_tab)
         self.setup_settings_tab(settings_tab)
-        self.setup_license_tab(license_tab)
         
         # Configure weights
         parent.grid_rowconfigure(0, weight=1)
         parent.grid_columnconfigure(0, weight=1)
-
-    def setup_license_tab(self, parent):
-        """Setup the license management tab"""
-        # License information frame
-        info_frame = ctk.CTkFrame(parent)
-        info_frame.pack(fill="x", pady=5)
-        
-        ctk.CTkLabel(info_frame, text="License Information", 
-                    font=("Arial", 14, "bold")).pack(anchor="w", padx=10, pady=5)
-        
-        # Current license status
-        status_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
-        status_frame.pack(fill="x", padx=10, pady=5)
-        
-        ctk.CTkLabel(status_frame, text="Status:").pack(side="left")
-        self.license_info_label = ctk.CTkLabel(status_frame, text="No License")
-        self.license_info_label.pack(side="left", padx=10)
-        
-        # Device information
-        device_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
-        device_frame.pack(fill="x", padx=10, pady=2)
-        
-        ctk.CTkLabel(device_frame, text="Device ID:").pack(side="left")
-        device_id_label = ctk.CTkLabel(device_frame, text=self.license_manager.device_id[:16] + "...")
-        device_id_label.pack(side="left", padx=10)
-        
-        device_name_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
-        device_name_frame.pack(fill="x", padx=10, pady=2)
-        
-        ctk.CTkLabel(device_name_frame, text="Device Name:").pack(side="left")
-        ctk.CTkLabel(device_name_frame, text=self.license_manager.device_name).pack(side="left", padx=10)
-        
-        # License entry frame
-        entry_frame = ctk.CTkFrame(parent)
-        entry_frame.pack(fill="x", pady=5)
-        
-        ctk.CTkLabel(entry_frame, text="Enter License Key", 
-                    font=("Arial", 14, "bold")).pack(anchor="w", padx=10, pady=5)
-        
-        # License key entry
-        key_frame = ctk.CTkFrame(entry_frame, fg_color="transparent")
-        key_frame.pack(fill="x", padx=10, pady=5)
-        
-        ctk.CTkLabel(key_frame, text="License Key:").pack(anchor="w")
-        self.license_key_entry = ctk.CTkEntry(key_frame, placeholder_text="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX")
-        self.license_key_entry.pack(fill="x", pady=2)
-        
-        # License action buttons
-        button_frame = ctk.CTkFrame(entry_frame, fg_color="transparent")
-        button_frame.pack(fill="x", padx=10, pady=5)
-        
-        self.verify_button = ctk.CTkButton(button_frame, text="Verify License", 
-                                         command=self.verify_license_key, width=120)
-        self.verify_button.pack(side="left", padx=5)
-        
-        self.deactivate_button = ctk.CTkButton(button_frame, text="Deactivate License", 
-                                             command=self.deactivate_license_key, width=120)
-        self.deactivate_button.pack(side="left", padx=5)
-        
-        # Purchase information
-        purchase_frame = ctk.CTkFrame(parent)
-        purchase_frame.pack(fill="x", pady=5)
-        
-        ctk.CTkLabel(purchase_frame, text="Get License", 
-                    font=("Arial", 14, "bold")).pack(anchor="w", padx=10, pady=5)
-        
-        info_text = """
-Untuk pembelian lisensi kunjungi atau hubungi:
-• Visit: https://loopbotiq.com
-• Contact: support@loopbotiq.com
-• WhatsApp: +62-812-2428-6756
-
-Your Device ID: """ + self.license_manager.device_id
-        
-        ctk.CTkLabel(purchase_frame, text=info_text, justify="left").pack(anchor="w", padx=10, pady=5)
-        
-        ctk.CTkButton(purchase_frame, text="Open LoopBotIQ Website", 
-                     command=lambda: webbrowser.open("http://loopbotiq.com"), 
-                     width=200).pack(anchor="w", padx=10, pady=5)
-        
-        # Update license info display
-        self.update_license_info_display()
-
-    def update_license_info_display(self):
-        """Update license information display"""
-        if self.license_manager.license_data:
-            license_key = self.license_manager.license_data.get('license_key', '')
-            expired_date = self.license_manager.license_data.get('expired_date', '')
-            status = self.license_manager.license_data.get('status', '')
-            
-            display_text = f"Licensed - {license_key[:20]}... (Expires: {expired_date})"
-            self.license_info_label.configure(text=display_text, text_color="green")
-            self.deactivate_button.configure(state="normal")
-        else:
-            self.license_info_label.configure(text="No License", text_color="red")
-            self.deactivate_button.configure(state="disabled")
-
-    def verify_license_key(self):
-        """Verify entered license key"""
-        license_key = self.license_key_entry.get().strip()
-        
-        if not license_key:
-            messagebox.showerror("Error", "Please enter a license key")
-            return
-        
-        # Validasi format UUID (contoh: 9e75ef96-48ef-424f-a322-2ecd3ab239a1)
-        uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-        if not re.match(uuid_pattern, license_key, re.IGNORECASE):
-            messagebox.showerror("Error", "Invalid license key format.\nFormat expected: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX")
-            return
-        
-        # Show progress
-        self.verify_button.configure(text="Verifying...", state="disabled")
-        
-        # Verify in background thread
-        def verify_thread():
-            success, message = self.license_manager.verify_license(license_key)
-            
-            # Update UI in main thread
-            self.after(0, lambda: self.on_license_verification_complete(success, message, license_key))
-        
-        threading.Thread(target=verify_thread, daemon=True).start()
-    
-    def deactivate_license_key(self):
-        """Deactivate license with UI feedback"""
-        if not self.license_manager.license_data:
-            messagebox.showwarning("No License", "No license to deactivate.")
-            return
-        
-        # Confirm deactivation
-        result = messagebox.askyesno(
-            "Confirm Deactivation", 
-            "Are you sure you want to deactivate your license?\n\n"
-            "This will disable all features and you'll need to re-enter "
-            "your license key to use the application again."
-        )
-        
-        if not result:
-            return
-        
-        # Show progress
-        self.deactivate_button.configure(text="Deactivating...", state="disabled")
-        
-        # Deactivate in background thread
-        def deactivate_thread():
-            success, message = self.license_manager.deactivate_license()
-            
-            # Update UI in main thread
-            self.after(0, lambda: self.on_license_deactivation_complete(success, message))
-        
-        threading.Thread(target=deactivate_thread, daemon=True).start()
-
-    def on_license_verification_complete(self, success, message, license_key):
-        """Handle license verification completion"""
-        # Reset button
-        self.verify_button.configure(text="Verify License", state="normal")
-        
-        if success:
-            # Update license status
-            self.is_licensed = True
-            self.license_status_label.configure(
-                text="✅ Licensed", 
-                text_color="green"
-            )
-            # Update license info display
-            self.update_license_info_display()
-            # Enable all features
-            self.enable_all_features()
-            # Start periodic license validation
-            self.start_periodic_license_check()
-        else:
-            # Update license status
-            self.is_licensed = False
-            self.license_status_label.configure(
-                text="❌ No License", 
-                text_color="red"
-            )
-            # Disable features
-            self.disable_all_features()
-
-    def on_license_deactivation_complete(self, success, message):
-        """Handle license deactivation completion"""
-        # Reset button
-        self.deactivate_button.configure(text="Deactivate License", state="normal")
-        
-        self.is_licensed = False
-        self.license_status_label.configure(text="❌ No License", text_color="red")
-        
-        # Update display
-        self.update_license_info_display()
-        
-        # Disable features
-        self.disable_all_features()
-        
-        if success:
-            self.log_message(f"✅ {message}")
-            
-            # Show success popup
-            messagebox.showinfo(
-                "License Deactivated", 
-                f"License has been deactivated successfully.\n\n"
-                f"{message}\n\n"
-                "All features are now disabled."
-            )
-        else:
-            self.log_message(f"❌ Deactivation failed: {message}")
-            
-            # Show error popup
-            messagebox.showerror(
-                "Deactivation Failed", 
-                f"Failed to deactivate license:\n\n{message}\n\n"
-                "Please try again or contact support."
-            )
-        
-        # Stop periodic license checks since license is deactivated
-        if self.license_check_timer:
-            self.after_cancel(self.license_check_timer)
-            self.license_check_timer = None
 
     def setup_content_tab(self, parent):
         """Setup the content configuration tab"""
@@ -1526,7 +536,7 @@ Your Device ID: """ + self.license_manager.device_id
         self.after(100, self.show_startup_info)
     
     def show_startup_info(self):
-        """Clear log and prepare for license verification messages"""
+        """Clear log and show startup messages"""
         # Clear log first
         self.log_text.delete("1.0", "end")
     
@@ -1748,9 +758,6 @@ Your Device ID: """ + self.license_manager.device_id
         """Log message with filtering for important messages only"""
         # Filter out unimportant messages
         skip_messages = [
-            "Lisensi Tidak diaktivasi",
-            "HWID tidak cocok",
-            "silahkan aktivasi lisensi",
             "Demo mode",
             "Simulating",
             "Created default",
@@ -1874,31 +881,14 @@ Your Device ID: """ + self.license_manager.device_id
         """Log informational messages (filtered)"""
         self.log_message(message, level="INFO")
 
-    # License Check Wrapper Methods
-    def check_license_before_action(self, action_name):
-        """Check license before allowing any action"""
-        if not self.is_licensed:
-            messagebox.showerror("License Required", 
-                               f"Cannot {action_name}.\n\n"
-                               "A valid license is required to use this feature.\n"
-                               "Please enter your license key in the License tab.")
-            return False
-        return True
-
     # Mode management
     def activate_youtube_mode(self):
         """Activate full YouTube mode"""
-        if not self.check_license_before_action("activate YouTube mode"):
-            return
-            
         self.status_label.configure(text="Status: YouTube Mode")
         self.log_message("🔄 Switched to YouTube Mode - Full functionality enabled")
     
     def activate_demo_mode(self):
         """Activate demo mode for testing"""
-        if not self.check_license_before_action("activate demo mode"):
-            return
-            
         self.status_label.configure(text="Status: Demo Mode")
         self.log_message("🔄 Switched to Demo Mode - Simulating YouTube features")
         messagebox.showinfo("Demo Mode", 
@@ -1910,9 +900,6 @@ Your Device ID: """ + self.license_manager.device_id
 
     # File Browser Methods
     def browse_titles(self, entry):
-        if not self.check_license_before_action("browse titles"):
-            return
-            
         filename = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
         if filename:
             entry.delete(0, "end")
@@ -1920,9 +907,6 @@ Your Device ID: """ + self.license_manager.device_id
             self.load_titles(filename)
     
     def browse_descriptions(self, entry):
-        if not self.check_license_before_action("browse descriptions"):
-            return
-            
         filename = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
         if filename:
             entry.delete(0, "end")
@@ -1930,9 +914,6 @@ Your Device ID: """ + self.license_manager.device_id
             self.load_descriptions(filename)
     
     def browse_streamkeys(self, entry):
-        if not self.check_license_before_action("browse stream keys"):
-            return
-            
         filename = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
         if filename:
             entry.delete(0, "end")
@@ -1940,9 +921,6 @@ Your Device ID: """ + self.license_manager.device_id
             self.load_streamkeys(filename)
     
     def browse_thumbnails(self, entry):
-        if not self.check_license_before_action("browse thumbnails"):
-            return
-            
         folder = filedialog.askdirectory()
         if folder:
             entry.delete(0, "end")
@@ -1950,9 +928,6 @@ Your Device ID: """ + self.license_manager.device_id
             self.load_thumbnails(folder)
     
     def browse_advanced_data(self, entry):
-        if not self.check_license_before_action("browse advanced data"):
-            return
-            
         filename = filedialog.askopenfilename(filetypes=[("JSON files", "*.json"), ("CSV files", "*.csv")])
         if filename:
             entry.delete(0, "end")
@@ -1960,9 +935,6 @@ Your Device ID: """ + self.license_manager.device_id
             self.load_advanced_data(filename)
     
     def browse_tags(self, entry):
-        if not self.check_license_before_action("browse tags"):
-            return
-            
         filename = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
         if filename:
             entry.delete(0, "end")
@@ -1971,9 +943,6 @@ Your Device ID: """ + self.license_manager.device_id
     
     def reset_used_content(self):
         """Reset all used content tracking"""
-        if not self.check_license_before_action("reset used content"):
-            return
-            
         self.used_titles.clear()
         self.used_descriptions.clear()
         self.used_thumbnails.clear()
@@ -1985,9 +954,6 @@ Your Device ID: """ + self.license_manager.device_id
 
     # Data Loading Methods
     def load_titles(self, filename):
-        if not self.is_licensed:
-            return
-            
         try:
             with open(filename, 'r', encoding='utf-8') as f:
                 self.titles = [line.strip() for line in f if line.strip()]
@@ -1999,9 +965,6 @@ Your Device ID: """ + self.license_manager.device_id
             self.log_message(f"❌ Error loading titles: {str(e)}")
     
     def load_descriptions(self, filename):
-        if not self.is_licensed:
-            return
-            
         try:
             with open(filename, 'r', encoding='utf-8') as f:
                 self.descriptions = [line.strip() for line in f if line.strip()]
@@ -2012,9 +975,6 @@ Your Device ID: """ + self.license_manager.device_id
             self.log_message(f"❌ Error loading descriptions: {str(e)}")
     
     def load_streamkeys(self, filename):
-        if not self.is_licensed:
-            return
-            
         try:
             with open(filename, 'r', encoding='utf-8') as f:
                 self.streamkeys = [line.strip() for line in f if line.strip()]
@@ -2023,9 +983,6 @@ Your Device ID: """ + self.license_manager.device_id
             self.log_message(f"❌ Error loading stream keys: {str(e)}")
     
     def load_thumbnails(self, folder):
-        if not self.is_licensed:
-            return
-            
         try:
             self.thumbnails = []
             for ext in ['.png', '.jpg', '.jpeg']:
@@ -2038,9 +995,6 @@ Your Device ID: """ + self.license_manager.device_id
             self.log_message(f"❌ Error loading thumbnails: {str(e)}")
     
     def load_tags(self, filename):
-        if not self.is_licensed:
-            return
-            
         try:
             with open(filename, 'r', encoding='utf-8') as f:
                 self.tags_list = [line.strip() for line in f if line.strip()]
@@ -2049,9 +1003,6 @@ Your Device ID: """ + self.license_manager.device_id
             self.log_message(f"❌ Error loading tags: {str(e)}")
     
     def load_advanced_data(self, filename):
-        if not self.is_licensed:
-            return
-            
         try:
             if filename.endswith('.json'):
                 with open(filename, 'r', encoding='utf-8') as f:
@@ -2081,9 +1032,6 @@ Your Device ID: """ + self.license_manager.device_id
 
     # YouTube Authentication Methods
     def authenticate_youtube(self):
-        if not self.check_license_before_action("authenticate with YouTube"):
-            return
-            
         if not GOOGLE_LIBS_AVAILABLE:
             self.log_message("❌ Google libraries not installed - Cannot authenticate")
             messagebox.showerror("Error", 
@@ -2377,9 +1325,6 @@ Your Device ID: """ + self.license_manager.device_id
 
     # Utility Methods
     def check_streamkeys(self):
-        if not self.check_license_before_action("check stream keys"):
-            return
-            
         if not self.streamkeys:
             self.log_message("No stream keys loaded")
             return
@@ -2497,9 +1442,6 @@ Your Device ID: """ + self.license_manager.device_id
 
     # Streaming Control Methods
     def start_streaming(self):
-        if not self.check_license_before_action("start streaming"):
-            return
-            
         if not self.titles:
             self.log_message("❌ No titles loaded")
             messagebox.showerror("Error", "Please load titles first")
@@ -2515,9 +1457,6 @@ Your Device ID: """ + self.license_manager.device_id
         stream_thread.start()
     
     def stop_streaming(self):
-        if not self.check_license_before_action("stop streaming"):
-            return
-            
         self.is_streaming = False
         self.start_button.configure(state="normal")
         self.stop_button.configure(state="disabled")
@@ -3515,10 +2454,8 @@ Your Device ID: """ + self.license_manager.device_id
 
 ════════════════════════════════════════════════════════════
 
-⚠️ LICENSE REQUIRED:
-Aplikasi ini memerlukan lisensi valid untuk berfungsi.
-Dapatkan lisensi dari: http://loopbotiq.com
-WhatsApp +62-812-2428-6756
+YouTube Live Stream Automation Tool
+Ready to use!
 
 ════════════════════════════════════════════════════════════
         """
@@ -3530,9 +2467,9 @@ WhatsApp +62-812-2428-6756
         close_button.pack(pady=10)
 
 def main():
-    print("🚀 LoopBot - YouTube Live Automation (Licensed Edition)")
+    print("🚀 LoopBot - YouTube Live Automation")
     print("=" * 55)
-    
+
     if not GOOGLE_LIBS_AVAILABLE:
         print("❌ CRITICAL: Google libraries not installed.")
         print("🚫 Demo mode has been disabled - Only live YouTube streaming is supported.")
@@ -3540,10 +2477,8 @@ def main():
         print("pip3 install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client")
         print("\n⚠️ Application will not function without these libraries!")
         print()
-    
-    print("🔐 License System: Active")
-    print("🌐 License Server: http://127.0.0.1:5000 (localhost)")
-    print("📄 Get your license at: http://loopbotiq.com")
+
+    print("✅ Application ready to use")
     print()
     
     app = YouTubeLiveAutomation()
